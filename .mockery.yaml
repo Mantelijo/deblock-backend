@@ -1,0 +1,20 @@
+with-expecter: true
+mockname: "{{.InterfaceName}}"
+filename: "{{.MockName}}.go"
+outpkg: mocks
+dir: internal/mocks/
+packages:
+  github.com/ethereum/go-ethereum:
+    config:
+    interfaces:
+      Subscription:
+        config:
+          mockname: MockGoEthereumSubscription
+          dir: internal/mocks/go_ethereum/
+          outpkg: go_ethereuem_mocks
+
+
+  github.com/Mantelijo/deblock-backend/internal/chain:
+    config:
+    interfaces:
+        WalletTransactionTracker:

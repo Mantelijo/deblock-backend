@@ -101,7 +101,6 @@ func (b *bitcoinSubscriber) Start() (<-chan *TrackedWalletEvent, <-chan error) {
 			for _, tx := range fullBlock.Transactions {
 				tx.TxHash()
 
-				inAmounts := []int64{}
 				inAmountTotal := int64(0)
 				outAmounts := []int64{}
 				outAmountTotal := int64(0)
@@ -124,7 +123,6 @@ func (b *bitcoinSubscriber) Start() (<-chan *TrackedWalletEvent, <-chan error) {
 					if err != nil || len(addrs) < 1 {
 						continue
 					}
-					inAmounts = append(inAmounts, prevTxOut.Value)
 					inAmountTotal += prevTxOut.Value
 					inWallets = append(inWallets, addrs[0].String())
 				}

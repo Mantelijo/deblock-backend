@@ -14,4 +14,7 @@ const (
 
 	// Http api bind address. Default is 127.0.0.1
 	API_BIND_ADDR = "API_BIND_ADDR"
+
+	// Kafka broker url
+	KAFKA_BROKER_URL = "KAFKA_BROKER_URL"
 )

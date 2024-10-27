@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/big"
+	"strings"
 	"sync"
 	"time"
 
@@ -57,6 +58,10 @@ func (s *solanaMainnetSubscriber) Init() error {
 		return fmt.Errorf("failed to get initial slot value: %w", err)
 	}
 	s.currentSlot = slot
+
+	slog.Info("initialized solana mainnet subscriber",
+		slog.String("rpc_url", s.rpcUrl),
+	)
 
 	return nil
 }
@@ -112,39 +117,61 @@ func (s *solanaMainnetSubscriber) fetchBlock(slot uint64, out chan<- *TrackedWal
 		return err
 	}
 	for _, tx := range block.Transactions {
-		if tx.Meta == nil {
-			continue
-		}
-		if len(tx.Meta.PostBalances) < 2 || len(tx.Meta.PreBalances) < 2 || len(tx.Transaction.Message.Accounts) < 2 {
+		if tx.Meta == nil || len(tx.Transaction.Message.Accounts) == 0 {
 			continue
 		}
 
-		// Process only transfer transactions with greater than 0 amount, as
-		// others are not interesting.
-		amount := tx.Meta.PostBalances[1] - tx.Meta.PreBalances[1]
-		if amount <= 0 {
+		// Data should be consistent, if not, skip the transaction.
+		if len(tx.Meta.PostBalances) != len(tx.Meta.PreBalances) {
 			continue
 		}
 
-		// hash := base58.Encode(tx.Transaction.Signatures[0])
-		sender := tx.Transaction.Message.Accounts[0]
-		recipient := tx.Transaction.Message.Accounts[1]
-		fee := tx.Meta.Fee
+		senderWalletsStr := []string{}
+		senderWallets := []common.PublicKey{}
+		senderAmounts := []int64{}
+		recipientWalletsStr := []string{}
+		recipientWallets := []common.PublicKey{}
+		recipientAmouts := []int64{}
 
-		s.mu.RLock()
-		_, okSender := s.registeredWallets[sender]
-		_, okRecipient := s.registeredWallets[recipient]
-		s.mu.RUnlock()
-
-		if okSender || okRecipient {
-			out <- &TrackedWalletEvent{
-				ChainName:   s.Name(),
-				Source:      sender.String(),
-				Destination: recipient.String(),
-				Amount:      big.NewInt(int64(amount)),
-				Fees:        big.NewInt(int64(fee)),
+		for i, account := range tx.Transaction.Message.Accounts {
+			solChange := tx.Meta.PostBalances[i] - tx.Meta.PreBalances[i]
+			// Skip 0 amount addresses
+			if solChange == 0 {
+				continue
+			}
+			// Sender
+			if solChange < 0 {
+				senderWalletsStr = append(senderWalletsStr, account.String())
+				senderWallets = append(senderWallets, account)
+				// Amount is negative for sender
+				senderAmounts = append(senderAmounts, -solChange)
+			} else {
+				// Recipient
+				recipientWalletsStr = append(recipientWalletsStr, account.String())
+				recipientWallets = append(recipientWallets, account)
+				recipientAmouts = append(recipientAmouts, solChange)
 			}
 		}
+		recipientsCommaSep := strings.Join(recipientWalletsStr, ",")
+		sendersCommaSep := strings.Join(senderWalletsStr, ",")
+
+		for i := range senderWalletsStr {
+			s.mu.RLock()
+			_, send := s.registeredWallets[senderWallets[i]]
+			s.mu.RUnlock()
+			if send {
+				out <- constructSolanaTransactionEvent(senderWalletsStr[i], recipientsCommaSep, senderAmounts[i], int64(tx.Meta.Fee))
+			}
+		}
+		for i := range recipientWalletsStr {
+			s.mu.RLock()
+			_, send := s.registeredWallets[recipientWallets[i]]
+			s.mu.RUnlock()
+			if send {
+				out <- constructSolanaTransactionEvent(sendersCommaSep, recipientWalletsStr[i], recipientAmouts[i], int64(tx.Meta.Fee))
+			}
+		}
+
 	}
 	slog.Info(
 		"processed a block",
@@ -154,6 +181,16 @@ func (s *solanaMainnetSubscriber) fetchBlock(slot uint64, out chan<- *TrackedWal
 	)
 
 	return nil
+}
+
+func constructSolanaTransactionEvent(sender, recipient string, amount, fees int64) *TrackedWalletEvent {
+	return &TrackedWalletEvent{
+		ChainName:   SolanaMainnet,
+		Source:      sender,
+		Destination: recipient,
+		Amount:      big.NewInt(amount),
+		Fees:        big.NewInt(fees),
+	}
 }
 
 func (e *solanaMainnetSubscriber) TrackWallet(wallet string) error {

@@ -3,6 +3,7 @@ package chain
 import (
 	"context"
 	"math/big"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,6 +16,9 @@ import (
 func TestFetchBlock(t *testing.T) {
 	acc1 := types.NewAccount() // sender
 	acc2 := types.NewAccount() // receiver
+	acc3 := types.NewAccount() // anything
+	acc4 := types.NewAccount() // anything
+	acc5 := types.NewAccount() // anything
 
 	tests := []struct {
 		name            string
@@ -78,16 +82,18 @@ func TestFetchBlock(t *testing.T) {
 					Transactions: []client.BlockTransaction{
 						{
 							Meta: &client.TransactionMeta{
-								PostBalances: []int64{1000, 750},
-								PreBalances:  []int64{1250, 500},
+								PreBalances:  []int64{1250, 500, 150, 100, 50},
+								PostBalances: []int64{1000, 750, 100, 150, 50},
 								Fee:          57,
 							},
 							Transaction: types.Transaction{
 								Message: types.Message{
 									Accounts: []common.PublicKey{
-										acc1.PublicKey,
-										acc2.PublicKey,
-										acc2.PublicKey,
+										acc1.PublicKey, // sender
+										acc2.PublicKey, // receiver
+										acc3.PublicKey, // sender
+										acc4.PublicKey, // receiver
+										acc5.PublicKey, // 0
 									},
 								},
 							},
@@ -99,15 +105,35 @@ func TestFetchBlock(t *testing.T) {
 			slot: 500,
 			wantEvents: []*TrackedWalletEvent{
 				{
+					ChainName: SolanaMainnet,
+					Source:    acc1.PublicKey.String(),
+					Destination: strings.Join(
+						[]string{
+							acc2.PublicKey.String(),
+							acc4.PublicKey.String(),
+						},
+						",",
+					),
+					Amount: big.NewInt(250),
+					Fees:   big.NewInt(57),
+				},
+				{
 					ChainName:   SolanaMainnet,
-					Source:      acc1.PublicKey.String(),
-					Destination: acc2.PublicKey.String(),
-					Amount:      big.NewInt(250),
-					Fees:        big.NewInt(57),
+					Destination: acc4.PublicKey.String(),
+					Source: strings.Join(
+						[]string{
+							acc1.PublicKey.String(),
+							acc3.PublicKey.String(),
+						},
+						",",
+					),
+					Amount: big.NewInt(50),
+					Fees:   big.NewInt(57),
 				},
 			},
 			registerWallets: []string{
 				acc1.PublicKey.String(),
+				acc4.PublicKey.String(),
 			},
 		},
 		{
@@ -125,7 +151,6 @@ func TestFetchBlock(t *testing.T) {
 								Message: types.Message{
 									Accounts: []common.PublicKey{
 										acc1.PublicKey,
-										acc2.PublicKey,
 										acc2.PublicKey,
 									},
 								},
